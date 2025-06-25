@@ -8,23 +8,99 @@ import (
     "math/rand"
 )
 
+type Monster interface {
+	DrawPos(screen tcell.Screen) ()
+	DrawHp(screen tcell.Screen, yPos int)
+	DrawStats(screen tcell.Screen, yPos int, xPos int)
+	IsAlive() bool
+	GetPosition() Coordinate
+	GetDex() int
+	GetXpGain() int
+	takeDamage()
+}
+
+type Respawner interface {
+	Respawn (position Coordinate) ()	
+	RespawnArea() (Coordinate, Coordinate)
+}
+
+type RespawningMonster struct {
+	*basicMonster
+	AreaMin Coordinate
+	AreaMax Coordinate
+	respawnHp int
+}
+
+type basicMonster struct {
+	name string
+    position Coordinate
+    hp int
+	dex int
+	xpGain int
+}
+
 type Dungeon struct {
     Tiles []string
 }
 
-type Player struct {
+type Coordinate struct {
     x, y int
+}
+
+type Player struct {
+    position Coordinate
 	hp int
 	dex int
 	xp int
 }
 
-type Monster struct {
-	name string
-    x, y int
-    hp int
-	dex int
-	xpGain int
+func (monster basicMonster) DrawPos(screen tcell.Screen) () {
+	if monster.IsAlive() {
+		screen.SetContent(monster.position.x, monster.position.y, []rune(monster.name)[0], nil, tcell.StyleDefault.Foreground(tcell.ColorRed))
+	}
+}
+
+func (monster basicMonster) DrawHp(screen tcell.Screen, yPos int) {
+	mStr := fmt.Sprintf("Monster HP: %d", monster.hp)
+	for i, ch := range mStr {
+		screen.SetContent(10+i, yPos, ch, nil, tcell.StyleDefault)
+	}
+}
+
+func (monster basicMonster) DrawStats(screen tcell.Screen, yPos int, xPos int){
+	line := fmt.Sprintf("%s (HP:%d DEX:%d)", monster.name, monster.hp, monster.dex)
+	for i, ch := range line {
+		screen.SetContent(xPos+i, yPos, ch, nil, tcell.StyleDefault)
+	}
+}
+
+func (monster basicMonster) GetPosition() Coordinate{
+	return monster.position
+}
+
+func (monster basicMonster) IsAlive() bool {
+	return monster.hp > 0
+}
+
+func (monster basicMonster) GetDex() int {
+	return monster.dex
+}
+
+func (monster basicMonster) GetXpGain() int {
+	return monster.xpGain
+}
+
+func (monster *basicMonster) takeDamage() {
+	monster.hp--
+}
+
+func (monster *RespawningMonster) Respawn(position Coordinate) {
+	monster.hp = monster.respawnHp
+	monster.position = position
+}
+
+func (monster *RespawningMonster) RespawnArea() (Coordinate, Coordinate) {
+	return monster.AreaMin, monster.AreaMax
 }
 
 func (dungeon *Dungeon) findRandomTile(minY int, maxY int, minX int, maxX int) (int, int) {
@@ -33,17 +109,16 @@ func (dungeon *Dungeon) findRandomTile(minY int, maxY int, minX int, maxX int) (
 	return x,y
 }
 
-
-func (dungeon *Dungeon) FindRandomFreeTile(minY int, maxY int, minX int, maxX int) (int, int, bool) {
+func (dungeon *Dungeon) FindRandomFreeTile(minY int, maxY int, minX int, maxX int) (Coordinate, bool) {
 	for range 10000 {
 		x, y := dungeon.findRandomTile(minY, maxY, minX, maxX)
 		if dungeon.Tiles[y][x] != '.' {
 			continue
 		}
-		return x, y, true
+		return  Coordinate{x, y}, true
 	}
 	// found no free space
-	return 0, 0, false
+	return Coordinate{0, 0}, false
 }
 
 func (dungeon *Dungeon) Draw(screen tcell.Screen) () {
@@ -54,21 +129,8 @@ func (dungeon *Dungeon) Draw(screen tcell.Screen) () {
 	}
 }
 
-func (monster *Monster) DrawPos(screen tcell.Screen) () {
-	if monster.hp > 0 {
-		screen.SetContent(monster.x, monster.y, []rune(monster.name)[0], nil, tcell.StyleDefault.Foreground(tcell.ColorRed))
-	}
-}
-
-func (monster *Monster) DrawHp(screen tcell.Screen, yPos int) {
-	mStr := fmt.Sprintf("Monster HP: %d", monster.hp)
-	for i, ch := range mStr {
-		screen.SetContent(10+i, yPos, ch, nil, tcell.StyleDefault)
-	}
-}
-
 func (player *Player) DrawPos(screen tcell.Screen) () {
-	screen.SetContent(player.x, player.y, '@', nil, tcell.StyleDefault.Foreground(tcell.ColorRed))
+	screen.SetContent(player.position.x, player.position.y, '@', nil, tcell.StyleDefault.Foreground(tcell.ColorRed))
 }
 
 func (player *Player) DrawStats(screen tcell.Screen, yPos int ) () {
@@ -101,23 +163,6 @@ func (player *Player) gainExp(xpToGain int, messageYOffSet int, screen tcell.Scr
 		}
 		screen.Show()
 		time.Sleep(5 * time.Second)
-	}
-}
-
-func (monster *Monster) DrawStats(screen tcell.Screen, yPos int, xPos int){
-	line := fmt.Sprintf("%s (HP:%d DEX:%d)", monster.name, monster.hp, monster.dex)
-	for i, ch := range line {
-		screen.SetContent(xPos+i, yPos, ch, nil, tcell.StyleDefault)
-	}
-}
-
-func (monster *Monster) revive(dungeon Dungeon, minY int, maxY int, minX int, maxX int, hp int){
-	// revive monster at randomized position
-	x, y, ok := dungeon.FindRandomFreeTile(minY, maxY, minX, maxX)
-	if ok {
-		monster.x = x
-		monster.y = y
-		monster.hp = hp
 	}
 }
 
@@ -158,7 +203,7 @@ func draw(dungeon Dungeon, monsters []Monster, player Player, fightingMonsterInd
 	player.DrawStats(screen, len(dungeon.Tiles))
 	
 	// If fighting, draw monster HP
-	if fightingMonsterIndex > -1 && monsters[fightingMonsterIndex].hp > 0 {
+	if fightingMonsterIndex > -1 && monsters[fightingMonsterIndex].IsAlive() {
 		monsters[fightingMonsterIndex].DrawHp(screen, len(dungeon.Tiles)+2)
 	}
 
@@ -167,7 +212,7 @@ func draw(dungeon Dungeon, monsters []Monster, player Player, fightingMonsterInd
 	infoY := 0
 	for _, monster := range monsters {
 		monster.DrawPos(screen)
-		if (monster.hp > 0){
+		if (monster.IsAlive()){
 			monster.DrawStats(screen, infoY, infoX)
 			infoY++
 		}
@@ -234,16 +279,62 @@ func initGame() (tcell.Screen, Dungeon, Player, []Monster){
 		"#..................#######.............#",
 		"####################     ###############",
 	}
-
-    player := Player{         x: 2,  y: 2,	hp: 25,  dex: 1,  xp:  0}
 	
-	monsters := []Monster{
-		{name: "Rat",         x: 13, y: 6,  hp: 3,   dex: 1,  xpGain: 1},
-		{name: "Troll",       x: 19, y: 8,  hp: 40,  dex: 2,  xpGain: 11},
-		{name: "Assassin",    x: 24, y: 8,  hp: 12,  dex: 11, xpGain: 20},
-		{name: "Shoggoth",    x: 29, y: 8,  hp: 20,  dex: 14, xpGain: 16},
-		{name: "Witch King",  x: 35, y: 7,  hp: 150, dex: 25, xpGain: 0},
+	playerPosition := Coordinate {x: 1, y: 2}
+    player := Player{         position: playerPosition,	hp: 25,  dex: 120,  xp:  0}
+	
+	//easy initialisation 
+	ratPosition := Coordinate {x: 13, y: 6}
+	trollPosition := Coordinate {x: 19, y: 8}
+	assasinePosition := Coordinate {x: 24, y: 8}
+	shoggothPosition := Coordinate {x: 29, y: 8}
+	witchKingPosition := Coordinate {x: 35, y: 7}
+	
+	basicMonsters := []basicMonster{
+		{name: "Troll",       position: trollPosition,  hp: 40,  dex: 2,  xpGain: 11},
+		{name: "Assassin",    position: assasinePosition,  hp: 12,  dex: 11, xpGain: 20},
+		{name: "Shoggoth",    position: shoggothPosition,  hp: 20,  dex: 14, xpGain: 16},
+		{name: "Witch King",  position: witchKingPosition,  hp: 150, dex: 25, xpGain: 0},
 	}
+	
+	respawningMonsters := []RespawningMonster{
+		{
+			basicMonster: &basicMonster{
+				name:     "Rat",
+				position: ratPosition,
+				hp:       3,
+				dex:      1,
+				xpGain:   1,
+			},
+			AreaMin:   Coordinate{0, 0},
+			AreaMax:   Coordinate{18, len(dungeon.Tiles)},
+			respawnHp: 3,
+		},
+		{
+			basicMonster: &basicMonster{
+				name:     "Shoggoth",
+				position: shoggothPosition,
+				hp:       20,
+				dex:      14,
+				xpGain:   16,
+			},
+			AreaMin:   Coordinate{26, 0},
+			AreaMax:   Coordinate{len(dungeon.Tiles[0]), len(dungeon.Tiles)},
+			respawnHp: 30,
+		},
+	}
+	
+	monsters := make([]Monster, len(basicMonsters))
+	for _, m := range respawningMonsters {
+		monsters = append(monsters, &m)
+	}
+	
+	for i := range basicMonsters {
+		monsters[i] = &basicMonsters[i] // use & if Monster’s methods have pointer receivers
+		//monsters[i] = basicMonsters[i]  // use value if pointer receivers aren’t required
+	}
+	
+	//transformation to []Monster to later mix with other, non-basic Monsters
 	return screen, dungeon, player, monsters
 }
 
@@ -261,25 +352,24 @@ func main() {
 			return
 		}
 		dx, dy := calculate_desired_movement(pressedRune)
-		newX := player.x + dx
-		newY := player.y + dy
+		desiredPlayerPosition := Coordinate {player.position.x + dx, player.position.y + dy}
 		
-		if dungeon.Tiles[newY][newX] == '#' {
+		if dungeon.Tiles[desiredPlayerPosition.y][desiredPlayerPosition.x] == '#' {
 			continue
 		}
 
 		fought := false
 		for i := range monsters {
-			if monsters[i].x == newX && monsters[i].y == newY && monsters[i].hp > 0 {						
+			if (monsters[i].GetPosition() == desiredPlayerPosition) && monsters[i].IsAlive() {						
 				for true {
-					if attackSuccesful(player.dex, monsters[i].dex){
-						monsters[i].hp--
+					if attackSuccesful(player.dex, monsters[i].GetDex()){
+						monsters[i].takeDamage()
 					}
-					if monsters[i].hp <= 0 {
+					if !monsters[i].IsAlive(){
 						break
 					}
 					
-					if attackSuccesful(monsters[i].dex, player.dex){
+					if attackSuccesful(monsters[i].GetDex(), player.dex){
 						player.hp--
 					}
 					if player.hp <= 0 {
@@ -293,21 +383,21 @@ func main() {
 				draw(dungeon, monsters, player, i, screen)
 				time.Sleep(200 * time.Millisecond)
 				
-				if monsters[4].hp <= 0{
+				if !monsters[3].IsAlive(){
 					game_over (screen, "You defeated the evil king", tcell.ColorGreen)
 				}
 				
-				if monsters[i].hp <= 0 {
+				if !monsters[i].IsAlive() {
 					// move onto defeated monster's tile
-					player.x = newX
-					player.y = newY
-					if monsters[i].name == "Rat" {
-						monsters[i].revive(dungeon, 0, len(dungeon.Tiles), 0, 18, 3)
+					player.position = desiredPlayerPosition
+					if r, ok := monsters[i].(Respawner); ok {
+						AreaMin, AreaMax := r.RespawnArea()
+						randomPos, positionOkay := dungeon.FindRandomFreeTile(AreaMin.y, AreaMax.y, AreaMin.x, AreaMax.x)
+						if (positionOkay){
+							r.Respawn(randomPos)
+						}
 					}
-					if monsters[i].name == "Shoggoth" {
-						monsters[i].revive(dungeon, 0, len(dungeon.Tiles), 24, len(dungeon.Tiles[0]), 30)
-					}
-					player.gainExp(monsters[i].xpGain, len(dungeon.Tiles), screen)
+					player.gainExp(monsters[i].GetXpGain(), len(dungeon.Tiles), screen)
 				}
 				fought = true
 				break
@@ -315,7 +405,7 @@ func main() {
 		}
 
 		if !fought {
-			player.x, player.y  = newX, newY
+			player.position  = desiredPlayerPosition
 		}
 
 		draw(dungeon, monsters, player, -1, screen)
