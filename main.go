@@ -222,7 +222,7 @@ func draw(dungeon Dungeon, monsters []Monster, player Player, fightingMonsterInd
 	screen.Show()
 }
 
-func game_over (screen tcell.Screen, messageText string, messageColor tcell.Color){
+func gameOver (screen tcell.Screen, messageText string, messageColor tcell.Color){
 	screen.Clear()
 	for i, ch := range messageText {
 		screen.SetContent(5+i, 5, ch, nil, tcell.StyleDefault.Foreground(messageColor))
@@ -233,13 +233,10 @@ func game_over (screen tcell.Screen, messageText string, messageColor tcell.Colo
 	log.Fatal("Game Over")
 }
 
-func attackSuccesful (dexAttacker int, dexDefender int) bool{
+func attackSuccessful (dexAttacker int, dexDefender int) bool{
 	attackerDice := rand.Intn(6)
 	defenderDice := rand.Intn(6)
-	if (attackerDice + dexAttacker) > (defenderDice + dexDefender){
-		return true
-	}
-	return false
+	return (attackerDice + dexAttacker) > (defenderDice + dexDefender)
 }
 
 func monitorKeyboard(screen tcell.Screen) (bool, rune) {
@@ -281,7 +278,7 @@ func initGame() (tcell.Screen, Dungeon, Player, []Monster){
 	}
 	
 	playerPosition := Coordinate {x: 1, y: 2}
-    player := Player{         position: playerPosition,	hp: 25,  dex: 120,  xp:  0}
+    player := Player{         position: playerPosition,	hp: 25,  dex: 2,  xp:  0}
 	
 	//easy initialisation 
 	ratPosition := Coordinate {x: 13, y: 6}
@@ -291,9 +288,9 @@ func initGame() (tcell.Screen, Dungeon, Player, []Monster){
 	witchKingPosition := Coordinate {x: 35, y: 7}
 	
 	basicMonsters := []basicMonster{
-		{name: "Troll",       position: trollPosition,  hp: 40,  dex: 2,  xpGain: 11},
-		{name: "Assassin",    position: assasinePosition,  hp: 12,  dex: 11, xpGain: 20},
-		{name: "Shoggoth",    position: shoggothPosition,  hp: 20,  dex: 14, xpGain: 16},
+		{name: "Troll",       position: trollPosition,  hp: 40,  dex: 2,  xpGain: 15},
+		{name: "Assassin",    position: assasinePosition,  hp: 12,  dex: 11, xpGain: 18},
+		{name: "Shoggoth",    position: shoggothPosition,  hp: 20,  dex: 14, xpGain: 20},
 		{name: "Witch King",  position: witchKingPosition,  hp: 150, dex: 25, xpGain: 0},
 	}
 	
@@ -362,18 +359,18 @@ func main() {
 		for i := range monsters {
 			if (monsters[i].GetPosition() == desiredPlayerPosition) && monsters[i].IsAlive() {						
 				for true {
-					if attackSuccesful(player.dex, monsters[i].GetDex()){
+					if attackSuccessful(player.dex, monsters[i].GetDex()){
 						monsters[i].takeDamage()
 					}
 					if !monsters[i].IsAlive(){
 						break
 					}
 					
-					if attackSuccesful(monsters[i].GetDex(), player.dex){
+					if attackSuccessful(monsters[i].GetDex(), player.dex){
 						player.hp--
 					}
 					if player.hp <= 0 {
-						game_over (screen, "You've been defeated", tcell.ColorRed)
+						gameOver (screen, "You've been defeated", tcell.ColorRed)
 						break
 					}
 					
@@ -384,7 +381,7 @@ func main() {
 				time.Sleep(200 * time.Millisecond)
 				
 				if !monsters[3].IsAlive(){
-					game_over (screen, "You defeated the evil king", tcell.ColorGreen)
+					gameOver (screen, "You defeated the evil king", tcell.ColorGreen)
 				}
 				
 				if !monsters[i].IsAlive() {
